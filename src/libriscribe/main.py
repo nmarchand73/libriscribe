@@ -9,6 +9,9 @@ from rich.prompt import Prompt
 from rich.panel import Panel
 import logging
 import warnings
+import sys
+import os
+import rich
 from pydantic import PydanticDeprecationWarning
 
 from libriscribe.knowledge_base import ProjectKnowledgeBase, Chapter  # Import the new class
@@ -51,6 +54,18 @@ def select_llm(project_knowledge_base: ProjectKnowledgeBase):
         available_llms.append("deepseek")
     if settings.mistral_api_key:
         available_llms.append("mistral")
+    
+    # Check if Ollama is available
+    try:
+        import ollama
+        # Check if Ollama service is running
+        models = ollama.list()
+        if models:
+            available_llms.append("ollama")
+    except ImportError:
+        pass  # Ollama not installed
+    except Exception:
+        pass  # Ollama not running
 
     if not available_llms:
         console.print("[red]❌ No LLM API keys found in .env file. Please add at least one.[/red]")
@@ -70,6 +85,8 @@ def select_llm(project_knowledge_base: ProjectKnowledgeBase):
         llm_choice = "deepseek"
     elif "Mistral" in llm_choice:
         llm_choice = "mistral"
+    elif "Ollama" in llm_choice:
+        llm_choice = "ollama"
         
     project_knowledge_base.set("llm_provider", llm_choice)
     return llm_choice
@@ -777,6 +794,60 @@ def format():
 def research(query: str = typer.Option(..., prompt="Research query")):
     """Performs web research on a given query."""
     project_manager.research(query)
+
+@app.command()
+def list_models():
+    """List available models for the selected provider."""
+    try:
+        # Try to get the current project's LLM provider
+        if project_manager.llm_client:
+            models = project_manager.llm_client.list_available_models()
+            if models:
+                console.print(f"[green]Available models for {project_manager.llm_client.llm_provider}:[/green]")
+                for model in models:
+                    console.print(f"  • {model}")
+            else:
+                console.print(f"[yellow]No models found for {project_manager.llm_client.llm_provider}[/yellow]")
+        else:
+            console.print("[yellow]No LLM client initialized. Please start a project first.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error listing models: {e}[/red]")
+
+@app.command()
+def pull_model(model_name: str = typer.Option(..., prompt="Model name to pull")):
+    """Pull a new model (Ollama only)."""
+    try:
+        if project_manager.llm_client and project_manager.llm_client.llm_provider == "ollama":
+            console.print(f"[cyan]Pulling model '{model_name}'...[/cyan]")
+            success = project_manager.llm_client.pull_model(model_name)
+            if success:
+                console.print(f"[green]✅ Successfully pulled model '{model_name}'[/green]")
+            else:
+                console.print(f"[red]❌ Failed to pull model '{model_name}'[/red]")
+        else:
+            console.print("[yellow]Model pulling is only available for Ollama provider.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error pulling model: {e}[/red]")
+
+@app.command()
+def check_ollama():
+    """Check if Ollama service is running and list available models."""
+    try:
+        import ollama
+        models = ollama.list()
+        if models and hasattr(models, 'models') and models.models:
+            console.print("[green]✅ Ollama service is running[/green]")
+            console.print(f"[cyan]Available models ({len(models.models)}):[/cyan]")
+            for model in models.models:
+                console.print(f"  • {model.model}")
+        else:
+            console.print("[yellow]⚠️ Ollama service is running but no models are installed[/yellow]")
+            console.print("[cyan]Use 'libriscribe pull-model <model-name>' to install a model[/cyan]")
+    except ImportError:
+        console.print("[red]❌ Ollama Python library not installed. Run: pip install ollama[/red]")
+    except Exception as e:
+        console.print(f"[red]❌ Ollama service is not running or not accessible: {e}[/red]")
+        console.print("[cyan]Please start Ollama service first: ollama serve[/cyan]")
 
 @app.command()
 def resume(project_name: str = typer.Option(..., prompt="Project name to resume")):

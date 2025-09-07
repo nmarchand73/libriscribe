@@ -8,6 +8,7 @@ from libriscribe.settings import Settings
 import anthropic  # For Claude
 import google.generativeai as genai  # For Google AI Studio
 import requests  # For DeepSeek and Mistral
+import ollama  # For Ollama
 
 # ADDED THIS: Import the function
 from libriscribe.utils.file_utils import extract_json_from_markdown
@@ -51,6 +52,11 @@ class LLMClient:
              if not self.settings.mistral_api_key:
                 raise ValueError("Mistral API key is not set")
              return None
+        elif self.llm_provider == "ollama":
+            # Check if Ollama service is running
+            if not self._check_ollama_availability():
+                raise ValueError("Ollama service is not running. Please start Ollama first.")
+            return ollama
         else:
             raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
 
@@ -66,6 +72,8 @@ class LLMClient:
              return "deepseek-coder-6.7b-instruct"
         elif self.llm_provider == "mistral":
             return "mistral-medium-latest"
+        elif self.llm_provider == "ollama":
+            return self.settings.ollama_default_model
         else:
             return "unknown"  # Should not happen, but good for safety
     def set_model(self, model_name: str):
@@ -135,6 +143,17 @@ class LLMClient:
                 response.raise_for_status()
                 return response.json()['choices'][0]['message']['content'].strip()
 
+            elif self.llm_provider == "ollama":
+                response = self.client.chat(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    options={
+                        "temperature": temperature,
+                        "num_predict": max_tokens
+                    }
+                )
+                return response['message']['content'].strip()
+
             else:
                 return "" #  Should not happen, provider checked in init
 
@@ -160,3 +179,64 @@ class LLMClient:
                         return repaired_response 
         logger.error("JSON repair failed.")
         return "" # Return empty
+
+    def _check_ollama_availability(self) -> bool:
+        """Check if Ollama service is running."""
+        try:
+            ollama.list()
+            return True
+        except Exception:
+            return False
+
+    def list_available_models(self) -> list:
+        """List available models for the current provider."""
+        if self.llm_provider == "ollama":
+            try:
+                models = self.client.list()
+                # Handle different response formats
+                if hasattr(models, 'models'):
+                    return [model.model for model in models.models]
+                elif isinstance(models, dict) and 'models' in models:
+                    return [model['model'] for model in models['models']]
+                else:
+                    return []
+            except Exception as e:
+                logger.error(f"Failed to list Ollama models: {e}")
+                return []
+        else:
+            # For other providers, return empty list or implement as needed
+            return []
+
+    def pull_model(self, model_name: str) -> bool:
+        """Pull a new model (Ollama specific)."""
+        if self.llm_provider == "ollama":
+            try:
+                self.client.pull(model_name)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to pull model {model_name}: {e}")
+                return False
+        return False
+
+    def generate_content_streaming(self, prompt: str, callback=None) -> str:
+        """Stream content generation (useful for long responses)."""
+        if self.llm_provider == "ollama":
+            try:
+                stream = self.client.chat(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    stream=True
+                )
+                full_response = ""
+                for chunk in stream:
+                    content = chunk['message']['content']
+                    full_response += content
+                    if callback:
+                        callback(content)
+                return full_response
+            except Exception as e:
+                logger.error(f"Error during Ollama streaming: {e}")
+                return ""
+        else:
+            # Fallback to regular generation for other providers
+            return self.generate_content(prompt)
