@@ -155,7 +155,7 @@ class ProjectManagerAgent:
         if project_data_path.exists():
             data = ProjectKnowledgeBase.load_from_file(str(project_data_path)) 
             if data:
-                self.                self.project_knowledge_base = data
+                self.project_knowledge_base = data
                 #CRITICAL: Set project_dir in project_knowledge_base
                 self.project_knowledge_base.project_dir = self.project_dir
             else:

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     mistral_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"  # Default Ollama URL
-    ollama_default_model: str = "llama3.2"  # Default Ollama model
+    ollama_default_model: str = "gemma3:latest"  # Default Ollama model
     projects_dir: str = str(Path(__file__).parent.parent.parent / "projects")
     default_llm: str = "openai" # Set a default
 
